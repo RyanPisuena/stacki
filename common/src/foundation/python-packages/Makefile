@@ -10,7 +10,17 @@ RPM.STRATEGY    = custom
 
 include $(STACKBUILD)/etc/CCRules.mk
 
-bootstrap rpm: src
+BOOTSTRAP        = 
+BOOTSTRAP.redhat = 
+BOOTSTRAP.sles   = libffi48-devel
+
+bootstrap: packages.json
+	$(STACKBUILD)/bin/package-install $(BOOTSTRAP) $(BOOTSTRAP.$(OS))
+	ROLLROOT=$(ROLLROOT) ../../stack/build/build/bin/pip2src --bootstrap
+	-for x in src/*; do $(MAKE) -C $$x $@; done
+	$(MAKE) clean
+
+rpm: bootstrap src
 	-for x in src/*; do $(MAKE) -C $$x $@; done
 	cp manifest.d/*.manifest $(ROLLROOT)/common/manifest.d/
 	cp nodes/*.xml $(ROLLROOT)/common/nodes/

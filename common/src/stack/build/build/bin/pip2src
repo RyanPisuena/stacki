@@ -8,9 +8,11 @@
 # @copyright@
 
 import os
+import sys
 import json
 import subprocess
 import tempfile
+import getopt
 
 
 class Package:
@@ -125,12 +127,21 @@ class Scanner:
 		package.url     = meta['url']
 		self.packages.append(package)
 		
+try:
+	opts, args = getopt.getopt(sys.argv[1:], '', ['bootstrap'])
+except getopt.GetoptError as msg:
+	sys.stderr.write("error - %s\n" % msg)
+	sys.exit(1)
+
+bootstrap = False
+for o, a in opts:
+	if o == '--bootstrap':
+		bootstrap = True
 
 
 Prefix = 'foundation-python'
 
-# Build the PackageSet
-
+print('\nBuild the PackageSet')
 PackageSet = {}
 with open('packages.json', 'r') as text:
 	code = []
@@ -146,18 +157,26 @@ with open('packages.json', 'r') as text:
 			package.appliances.append('server')
 		if manifest[name].get('be'):
 			package.appliances.append('client')
+		if bootstrap and not package.bootstrap:
+			continue
 		PackageSet[name] = package
+for key in PackageSet:
+	print(f'\t{key} {PackageSet[key].version}\n')
 
 
 # If we have versions.json file populate any missing version with the previously
 # computed values.
 
 if os.path.exists('versions.json'):
+	print('Reading versions.json')
 	with open('versions.json', 'r') as text:
 		versions = json.loads(text.read())
 	for package in PackageSet.values():
 		if not package.version:
 			package.version = versions[package.name]
+	for key in PackageSet:
+		print(f'\t{key} {PackageSet[key].version}\n')
+
 
 # Compute dependencies and versions
 #
@@ -176,7 +195,7 @@ for pkgname in pkgnames:
 			target = pkgname
 		print('Unpacking %s' % target)
 		subprocess.run(['/opt/stack/bin/python3', '-mpip', 
-				 'install', '-I', '--root=%s' % tmp, target],
+				'install', '--no-warn-script-location', '-I', '--root=%s' % tmp, target],
 			       stdout=subprocess.PIPE)
 		print('Scanning  %s' % pkgname)
 		for package in Scanner(tmp).packages:
@@ -237,7 +256,7 @@ include $(STACKBUILD)/etc/CCRules.mk
 build:
 
 install::
-	$(PY.PATH) -mpip install -I --no-deps --root=$(ROOT) %s==$(VERSION)
+	$(PY.PATH) -mpip install --no-warn-script-location -I --no-deps --root=$(ROOT) %s==$(VERSION)
 """ % (os.environ['ROLLROOT'], package.name))
 		if package.bootstrap:
 			makefile.write('\nbootstrap: install-rpm\n')
@@ -285,3 +304,4 @@ for pkgname in pkgnames:
 			manifest.write('\t%s-%s\n' % (Prefix, dep.name))
 
 
+print('\n\n')
