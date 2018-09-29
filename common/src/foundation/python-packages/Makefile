@@ -10,14 +10,20 @@ RPM.STRATEGY    = custom
 
 include $(STACKBUILD)/etc/CCRules.mk
 
+#BOOTSTRAP        = 
+#BOOTSTRAP.redhat = 
+#BOOTSTRAP.sles   = 
+#	$(STACKBUILD)/bin/package-install $(BOOTSTRAP) $(BOOTSTRAP.$(OS))
+
 bootstrap rpm: src
+
 	-for x in src/*; do $(MAKE) -C $$x $@; done
 	cp manifest.d/*.manifest $(ROLLROOT)/common/manifest.d/
 	cp nodes/*.xml $(ROLLROOT)/common/nodes/
 	cp graph/*.xml $(ROLLROOT)/common/graph/
 
 refresh:
-	-rm versions.json
+	-rm -f versions.json
 
 src: packages.json
 	$(MAKE) clean
