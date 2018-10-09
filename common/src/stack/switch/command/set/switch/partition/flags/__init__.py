@@ -46,14 +46,15 @@ class Command(
 
 		# force is really whether or not this command came from ADD vs SET
 		stack_set = self.str2bool(force)
-		
+
 		if name.lower() == 'default':
 			name = 'Default'
+			pkey = 0x7fff
 		else:
 			try:
-				int(name, 16)
+				pkey = int(name, 16)
 			except ValueError:
-				raise ParamValue(self, 'name', 'a hex value between 0x0001 and 0x7ffE, or "default"')
+				raise ParamValue(self, 'name', 'a hex value between 0x0001 and 0x7FFE, or "default"')
 
 		flag_str = ''
 		if options:
@@ -72,19 +73,23 @@ class Command(
 			msg = 'The following switches are either non-infiniband or are not subnet managers: '
 			raise CommandError(self, msg + f'{", ".join(bad_switches)}')
 
-		sql_check = '(ID) from ib_partitions where switch=%s and part_name=%s'
+		ids_sql = 'name, id from nodes where name in (%s)' % ','.join(['%s'] * len(switches))
+		sw_ids = dict((row[0], row[1]) for row in self.db.select(ids_sql, tuple(switches)))
+
+		sql_check = '(id) from ib_partitions where switch=%s and part_name=%s'
 		for switch in switches:
 			# if doing an ADD, we want to ensure the partition doesn't already exist
-			exists = self.db.count(sql_check, (switch, name)) > 0
+			exists = self.db.count(sql_check, (sw_ids[switch], name)) > 0
 
 			if exists and not stack_set:
 				raise CommandError(self, f'partition "{name}" already exists on switch "{switch}"')
 
 		# if it already exists, we do an UPDATE instead
-		if stack_set and exists:
-			sql_stmt 'update ib_partitions set switch=%s, part_key=%s, part_name=%, options=%s'
-		else:
-			sql_stmt = 'insert into ib_partitions (switch, part_key, part_name, options) values (%s, %s, %s, %s)'
+		sql_update = 'update ib_partitions set switch=%s, part_key=%s, part_name=%s, options=%s where switch=%s'
+		sql_insert = 'insert into ib_partitions (switch, part_key, part_name, options) values (%s, %s, %s, %s)'
 
 		for switch in switches:
-			self.db.execute(sql_stmt, (switch, pkey, name, flag_str))
+			if stack_set and exists:
+				self.db.execute(sql_update, (sw_ids[switch], pkey, name, flag_str, sw_ids[switch]))
+			else:
+				self.db.execute(sql_insert, (sw_ids[switch], pkey, name, flag_str))
