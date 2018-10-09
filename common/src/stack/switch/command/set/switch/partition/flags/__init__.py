@@ -18,7 +18,7 @@ class Command(
 
 	<arg type='string' name='switch'>
 	The name of the switches on which to set this flag.  If a switch
-	is not an infiniband subnet managers an error will be raised.
+	is not an infiniband subnet manager an error will be raised.
 	</arg>
 
 	<param type='string' name='name' optional='0'>
@@ -47,7 +47,8 @@ class Command(
 		# force is really whether or not this command came from ADD vs SET
 		stack_set = self.str2bool(force)
 
-		if name.lower() == 'default':
+		name = name.lower()
+		if name == 'default':
 			name = 'Default'
 			pkey = 0x7fff
 		else:
@@ -61,8 +62,13 @@ class Command(
 			options = dict(flag.split('=') for flag in options.split() if '=' in flag)
 			if 'ipoib' in options:
 				flag_str += f"ipoib={self.str2bool(options['ipoib'])}"
+				del options['ipoib']
 			if 'defmember' in options and options['defmember'].lower() in ['limited', 'full']:
 				flag_str += f" defmember={options['defmember'].lower()}"
+				del options['defmember']
+			if options:
+				msg = 'The following are invalid partition options: '
+				raise CommandError(self, msg + ' '.join(f'{k}={v}' for k, v in options.items()))
 
 		switches = self.getSwitchNames(args)
 		ibswitches = [sw for sw in self.call('list.switch', ['expanded=True'])
@@ -70,13 +76,13 @@ class Command(
 
 		bad_switches = set(switches).difference(sw['switch'] for sw in ibswitches)
 		if bad_switches:
-			msg = 'The following switches are either non-infiniband or are not subnet managers: '
+			msg = 'the following switches are either non-infiniband or are not subnet managers: '
 			raise CommandError(self, msg + f'{", ".join(bad_switches)}')
 
-		ids_sql = 'name, id from nodes where name in (%s)' % ','.join(['%s'] * len(switches))
+		ids_sql = 'name, id FROM nodes WHERE name IN (%s)' % ','.join(['%s'] * len(switches))
 		sw_ids = dict((row[0], row[1]) for row in self.db.select(ids_sql, tuple(switches)))
 
-		sql_check = '(id) from ib_partitions where switch=%s and part_name=%s'
+		sql_check = '(id) FROM ib_partitions WHERE switch=%s AND part_name=%s'
 		for switch in switches:
 			# if doing an ADD, we want to ensure the partition doesn't already exist
 			exists = self.db.count(sql_check, (sw_ids[switch], name)) > 0
@@ -85,8 +91,8 @@ class Command(
 				raise CommandError(self, f'partition "{name}" already exists on switch "{switch}"')
 
 		# if it already exists, we do an UPDATE instead
-		sql_update = 'update ib_partitions set switch=%s, part_key=%s, part_name=%s, options=%s where switch=%s'
-		sql_insert = 'insert into ib_partitions (switch, part_key, part_name, options) values (%s, %s, %s, %s)'
+		sql_update = 'UPDATE ib_partitions SET switch=%s, part_key=%s, part_name=%s, options=%s WHERE switch=%s'
+		sql_insert = 'INSERT INTO ib_partitions (switch, part_key, part_name, options) VALUES (%s, %s, %s, %s)'
 
 		for switch in switches:
 			if stack_set and exists:
