@@ -4,8 +4,6 @@
 # https://github.com/Teradata/stacki/blob/master/LICENSE.txt
 # @copyright@
 
-from operator import itemgetter
-
 import stack.commands
 from stack.exception import ArgRequired, ParamValue, CommandError
 
@@ -42,7 +40,6 @@ class Command(
 		])
 		expanded = self.str2bool(expanded)
 
-		# force is really whether or not this command came from ADD vs SET
 		if name and name.lower() == 'default':
 			name = 'Default'
 

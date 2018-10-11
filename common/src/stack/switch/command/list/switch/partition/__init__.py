@@ -34,7 +34,6 @@ class Command(
 			('name', None),
 		])
 
-		# force is really whether or not this command came from ADD vs SET
 		if name and name.lower() == 'default':
 			name = 'Default'
 
