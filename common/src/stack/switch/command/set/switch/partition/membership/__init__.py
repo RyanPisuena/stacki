@@ -5,15 +5,16 @@
 # @copyright@
 
 import stack.commands
-from stack.exception import ArgUnique, CommandError, ParamValue
+from stack.exception import ArgRequired, ParamValue, CommandError
+
 
 class Command(
 	stack.commands.Command,
 	stack.commands.SwitchArgumentProcessor,
 ):
 	"""
-	Add members to an infiniband partition in the Stacki database for one or
-	more switches.
+	Set membership state on an infiniband partition in the Stacki database for
+	a switch.
 
 	<arg type='string' name='switch'>
 	The name of the switches to add partition members to.  If a switch is
@@ -21,7 +22,7 @@ class Command(
 	</arg>
 
 	<param type='string' name='name' optional='0'>
-	The name of the partition to add members to on the switch(es).
+	The name of the partition to add member to on the switch.
 	</param>
 
 	<param type='string' name='guid' optional='1'>
@@ -42,9 +43,8 @@ class Command(
 	The membership state to use for this member on the partition.  Must be 'both',
 	or 'limited'.  Defaults to 'limited'.
 	</param>
-
 	"""
-	
+
 	def run(self, params, args):
 		if len(args) != 1:
 			raise ArgUnique(self, 'switch')
@@ -100,7 +100,8 @@ class Command(
 				(name, switch_id)) == 0:
 			raise CommandError(self, f'partition {name} does not exist on switch {switch}')
 
-		# Ensure this member does not already exist on the partition and switch
+		# Determine if this member already exists on the partition and switch
+		existing = False
 		if self.db.count('''
 			(ib_m.id)
 			FROM ib_memberships ib_m, ib_partitions ib_p, nodes, networks
@@ -111,13 +112,28 @@ class Command(
 				ib_p.part_name=%s AND
 				networks.mac=%s ''',
 				(switch, name, guid)) > 0:
-			raise CommandError(self, f'{guid} is already a member of switch partition {name}')
+			existing = True
 
-		self.db.execute('''
+		insert_sql = '''
 				INSERT INTO ib_memberships (switch, interface, part_name, member_type)
 				VALUES (%s,
 						(SELECT id FROM networks WHERE mac=%s),
 						(SELECT id FROM ib_partitions WHERE part_name=%s AND switch=%s),
 						%s)
-				''',
-				(switch_id, guid, name, switch_id, membership))
+				'''
+
+		update_sql = '''
+				UPDATE ib_memberships
+				SET switch=%s,
+					interface=(SELECT id FROM networks WHERE mac=%s),
+					part_name=(SELECT id FROM ib_partitions WHERE part_name=%s AND switch=%s),
+					member_type=%s
+				WHERE switch=%s AND
+					part_name=(SELECT id FROM ib_partitions WHERE part_name=%s AND switch=%s) AND
+					interface=(SELECT id FROM networks WHERE mac=%s)
+				'''
+
+		if existing:
+			self.db.execute(update_sql, (switch_id, guid, name, switch_id, membership, switch_id, name, switch_id, guid))
+		else:
+			self.db.execute(insert_sql, (switch_id, guid, name, switch_id, membership))
