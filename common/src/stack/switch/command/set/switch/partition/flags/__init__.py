@@ -38,7 +38,7 @@ class Command(
 		if not len(args):
 			raise ArgRequired(self, 'switch')
 
-		name, options, force = self.fillParams([
+		name, options_param, force = self.fillParams([
 			('name', None, True),
 			('options', None),
 			('force', True),
@@ -57,16 +57,17 @@ class Command(
 			except ValueError:
 				raise ParamValue(self, 'name', 'a hex value between 0x0001 and 0x7FFE, or "default"')
 
-		flag_str = ''
-		if options:
-			options = dict(flag.split('=') for flag in options.split() if '=' in flag)
+		parsed_options_str = ''
+		if options_param:
+			options = dict(flag.split('=') for flag in options_param.split() if '=' in flag)
 			if 'ipoib' in options:
-				flag_str += f"ipoib={self.str2bool(options['ipoib'])}"
+				parsed_options_str += f"ipoib={self.str2bool(options['ipoib'])}"
 				del options['ipoib']
 			if 'defmember' in options and options['defmember'].lower() in ['limited', 'full']:
-				flag_str += f" defmember={options['defmember'].lower()}"
+				parsed_options_str += f" defmember={options['defmember'].lower()}"
 				del options['defmember']
 			if options:
+				# if there's any leftover, error
 				msg = 'The following are invalid partition options: '
 				raise CommandError(self, msg + ' '.join(f'{k}={v}' for k, v in options.items()))
 
@@ -82,20 +83,27 @@ class Command(
 		ids_sql = 'name, id FROM nodes WHERE name IN (%s)' % ','.join(['%s'] * len(switches))
 		sw_ids = dict((row[0], row[1]) for row in self.db.select(ids_sql, tuple(switches)))
 
-		sql_check = '(id) FROM ib_partitions WHERE switch=%s AND part_name=%s'
+		sql_check = 'id, options FROM ib_partitions WHERE switch=%s AND part_name=%s'
 		for switch in switches:
 			# if doing an ADD, we want to ensure the partition doesn't already exist
-			exists = self.db.count(sql_check, (sw_ids[switch], name)) > 0
+			exists = self.db.select(sql_check, (sw_ids[switch], name))
+			if not exists:
+				continue
 
-			if exists and not stack_set:
+			existing_part_id = exists[0][0]
+
+			if not stack_set:
 				raise CommandError(self, f'partition "{name}" already exists on switch "{switch}"')
+			if options_param is None:
+				# if user supplied no options field, for existing keep the previous options field
+				parsed_options_str = exists[0][1]
 
 		# if it already exists, we do an UPDATE instead
-		sql_update = 'UPDATE ib_partitions SET switch=%s, part_key=%s, part_name=%s, options=%s WHERE switch=%s'
+		sql_update = 'UPDATE ib_partitions SET switch=%s, part_key=%s, part_name=%s, options=%s WHERE switch=%s and id=%s'
 		sql_insert = 'INSERT INTO ib_partitions (switch, part_key, part_name, options) VALUES (%s, %s, %s, %s)'
 
 		for switch in switches:
 			if stack_set and exists:
-				self.db.execute(sql_update, (sw_ids[switch], pkey, name, flag_str, sw_ids[switch]))
+				self.db.execute(sql_update, (sw_ids[switch], pkey, name, parsed_options_str, sw_ids[switch], existing_part_id))
 			else:
-				self.db.execute(sql_insert, (sw_ids[switch], pkey, name, flag_str))
+				self.db.execute(sql_insert, (sw_ids[switch], pkey, name, parsed_options_str))

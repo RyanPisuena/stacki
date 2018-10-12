@@ -95,5 +95,4 @@ class Command(
 			where_clause += ' AND ib_memberships.interface=(SELECT id FROM networks WHERE mac=%s)'
 			vals.append(guid)
 
-		print(f'{delete_stmt} {where_clause}')
 		self.db.execute(f'{delete_stmt} {where_clause}', vals)

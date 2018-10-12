@@ -137,7 +137,58 @@ class Implementation(stack.commands.Implementation):
 
 				good_partitions.append(partition, mac, membership)
 
-		
+
+	def get_fabric(self, switch):
+		fabric = ''
+		for row in self.owner.call('list.host.interface', [switch]):
+			iface = IfInfo(*iface_getter(row))
+			if iface.host != switch:
+				continue
+
+			if not iface.interface.startswith('mgmt'):
+				continue
+			if not iface.mac or not iface.ip:
+				# mgmt iface not configured
+				continue
+
+			if iface.options is None:
+				# no partition info set
+				continue
+
+			opts = shlex.split(iface.options)
+
+			if 'ibfabric=' not in iface.options:
+				# no fabric info set
+				continue
+			_, fabric = next(opt.split('=') for opt in opts if opt.startswith('ibfabric='))
+			break
+
+		return fabric
+
+
+	def get_db_partitions(self, switch):
+		partitions = {}
+		list_part_member = call('list.switch.partition.member', [switch, 'expanded=true'])
+		for row in list_part_member:
+			if row['partition'] not in partitions:
+				partitions[row['partition']] = {
+					'guids': [],
+					'pkey': row['partition key']
+				}
+
+				opts = dict(flag.split('=') for flag in row['options'].split() if '=' in flag)
+				for flag in ['ipoib', 'defmember']:
+					if flag in opts:
+						partitions[row['partition']][flag] = opts[flag]
+
+			partitions[row['partition']]['guids'].append(
+				(row['guid'][-23:],
+				 row['membership'])
+			)
+
+		return partitions
+
+
 	def run(self, args):
 		switch = args[0]['host']
 
@@ -166,10 +217,11 @@ class Implementation(stack.commands.Implementation):
 		if not s.subnet_manager:
 			raise CommandError(self.owner, f'{switch} is not a subnet manager')
 
+
+		fabric = get_fabric(switch)
+
+		
 		lst_host_iface = self.owner.call('list.host.interface')
-
-		fabric, good_partitions = get_needed_partitions(switch, lst_host_iface)
-
 		for partition in good_partitions:
 			if partition in s.partitions:
 				continue
