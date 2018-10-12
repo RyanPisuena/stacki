@@ -22,7 +22,7 @@ class Command(
 	</arg>
 
 	<param type='string' name='name' optional='0'>
-	The name of the partition to add member to on the switch.
+	The name of the partition to set membership status on the switch.
 	</param>
 
 	<param type='string' name='guid' optional='1'>

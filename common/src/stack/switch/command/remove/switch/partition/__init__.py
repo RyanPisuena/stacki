@@ -57,7 +57,7 @@ class Command(
 		vals = list(sw_ids.values())
 
 		if name:
-			sw_select += ' AND ib_partitions.part_name=%s'
+			delete_stmt += ' AND ib_partitions.part_name=%s'
 			vals.append(name)
 
 		self.db.execute(delete_stmt, vals)
