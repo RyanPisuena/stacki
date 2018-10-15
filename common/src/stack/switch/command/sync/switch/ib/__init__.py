@@ -42,9 +42,10 @@ class Command(command):
 
 	def run(self, params, args):
 
-		nukeswitch = self.fillParams([
-			('nukeswitch', 'no'),
+		nukeswitch, = self.fillParams([
+			('nukeswitch', False),
 		])
+
 		self.nukeswitch = self.str2bool(nukeswitch)
 
 		switches = self.getSwitchNames(args)
@@ -52,12 +53,13 @@ class Command(command):
 		switch_attrs = self.getHostAttrDict(switches)
 
 		for switch in switches:
-			if switch_attrs[switch]['switch_type'] != 'infiniband':
-				raise CommandError(self, f'{switch} is not an infiniband switch')
+			if 'switch_type' in switch_attrs[switch] and switch_attrs[switch]['switch_type'] != 'infiniband':
+				msg = f'{switch} is not an infiniband switch, please verify "stack list host attr {switch} attr=switch_type"'
+				raise CommandError(self, msg)
 
 		for switch in self.call('list.host.interface', switches):
 			switch_name = switch['host']
 
 			model = self.getHostAttr(switch_name, 'component.model')
-			self.runImplementation(switch_attrs[switch]['component.model'], [switch])
+			self.runImplementation(switch_attrs[switch_name]['component.model'], [switch_name])
 

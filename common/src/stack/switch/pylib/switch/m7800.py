@@ -172,7 +172,7 @@ class SwitchMellanoxM7800(Switch):
 				partitions[cur_partition] = {
 					'pkey': '',
 					'ipoib': False,
-					'guids': [],
+					'guids': {},
 				}
 				continue
 
@@ -185,7 +185,8 @@ class SwitchMellanoxM7800(Switch):
 				partitions[cur_partition]['ipoib'] = str2bool(ipoib.strip())
 			elif line.startswith('GUID'):
 				m = re.search(guid_member_format, line)
-				partitions[cur_partition]['guids'].append((m.group(0), m.group(2)))
+				guid, membership = m.groups()[0].lower(), m.groups()[2]
+				partitions[cur_partition]['guids'][guid] = membership
 
 		info(partitions.keys())
 		return partitions
@@ -212,7 +213,7 @@ class SwitchMellanoxM7800(Switch):
 		return hex(pkey)
 
 
-	def add_partition(self, partition='Default', pkey=None):
+	def add_partition(self, partition='Default', pkey=None, defmember=None, ipoib=None):
 		"""
 		Add `partition` to the switch, with partition key `pkey` which must be between 2-32766.
 		`partition` 'Default' has a hard-coded pkey.
@@ -223,20 +224,35 @@ class SwitchMellanoxM7800(Switch):
 				raise SwitchException(f'a partition key is required for partition: {partition}.')
 			pkey = self._validate_pkey(pkey)
 			if not pkey:
-				raise SwitchException('InfiniBand partition keys must be between 2 and 32766')
-
-		if str(partition) == 'Default':
-			add_part_seq = [
-				(None, 'no ib partition Default'),
-				("Type 'yes' to continue:", 'yes'),
-				(self.proc.PROMPTS, 'ib partition Default pkey 0x7fff force'),
-				(self.proc.PROMPTS, 'ib partition Default defmember limited force'),
-				(self.proc.PROMPTS, 'ib partition Default ipoib force'),
-				(self.proc.PROMPTS, None),
-			]
-			self.proc.conversation(add_part_seq)
+				raise SwitchException(f'Infiniband partition keys must be between 2 and 32766, not {pkey}')
 		else:
-			self.proc.say(f'ib partition {partition} pkey {pkey} force')
+			pkey = '0x7fff'
+
+		self.proc.say(f'ib partition {partition} pkey {pkey} force')
+
+		if defmember:
+			self.proc.say(f'ib partition {partition} defmember {defmember} force')
+		elif defmember is None:
+			if partition == 'Default':
+				self.proc.conversation([
+					(None, f'no ib partition {partition} defmember'),
+					("Type 'yes' to continue:", 'yes'),
+					(self.proc.PROMPTS, None),
+				])
+			else:
+				self.proc.say(f'no ib partition {partition} defmember')
+			
+		if ipoib is True:
+			self.proc.say(f'ib partition {partition} ipoib force')
+		elif ipoib is False:
+			if partition == 'Default':
+				self.proc.conversation([
+					(None, f'no ib partition {partition} ipoib'),
+					("Type 'yes' to continue:", 'yes'),
+					(self.proc.PROMPTS, None),
+				])
+			else:
+				self.proc.say(f'no ib partition {partition} ipoib')
 
 
 	def del_partition(self, partition):

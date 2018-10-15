@@ -36,5 +36,5 @@ class Command(
 	"""
 
 	def run(self, params, args):
-		self.command('set.switch.partition.flags', self._argv + ['force=false'])
+		self.command('set.switch.partition.options', self._argv + ['force=false'])
 		return self.rc

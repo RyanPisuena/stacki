@@ -168,29 +168,28 @@ class Implementation(stack.commands.Implementation):
 
 	def get_db_partitions(self, switch):
 		partitions = {}
-		list_part_member = call('list.switch.partition.member', [switch, 'expanded=true'])
+		list_part_member = self.owner.call('list.switch.partition.member', [switch, 'expanded=true'])
 		for row in list_part_member:
-			if row['partition'] not in partitions:
-				partitions[row['partition']] = {
-					'guids': [],
+			part = row['partition']
+			if part not in partitions:
+				partitions[part] = {
+					'guids': {},
 					'pkey': row['partition key']
 				}
 
 				opts = dict(flag.split('=') for flag in row['options'].split() if '=' in flag)
 				for flag in ['ipoib', 'defmember']:
 					if flag in opts:
-						partitions[row['partition']][flag] = opts[flag]
+						partitions[part][flag] = opts[flag]
 
-			partitions[row['partition']]['guids'].append(
-				(row['guid'][-23:],
-				 row['membership'])
-			)
+			guid = row['guid'][-23:].lower()
+			partitions[part]['guids'][guid] = row['membership']
 
 		return partitions
 
 
 	def run(self, args):
-		switch = args[0]['host']
+		switch, = args
 
 		switch_attrs = self.owner.getHostAttrDict(switch)
 
@@ -217,41 +216,42 @@ class Implementation(stack.commands.Implementation):
 		if not s.subnet_manager:
 			raise CommandError(self.owner, f'{switch} is not a subnet manager')
 
+		fabric = self.get_fabric(switch)
+		db_partitions = self.get_db_partitions(switch)
 
-		fabric = get_fabric(switch)
-
-		
-		lst_host_iface = self.owner.call('list.host.interface')
-		for partition in good_partitions:
-			if partition in s.partitions:
-				continue
-
-			try:
-				s.add_partition(partition, int(partition, 16))
-			except SwitchException as e:
-				msg = f'Error while attempting to add partition "{partition}" to {switch}:\n{e}'
-				raise CommandError(self.owner, msg)
-
-		unused_partitions = set(s.partitions).difference(good_partitions)
+		# remove partitions on the switch which are not on the database
+		# handling changes within existing partitions will be handled later
+		unused_partitions = set(s.partitions).difference(db_partitions)
 		for part in unused_partitions:
 			s.del_partition(part)
 
 		if not fabric:
 			raise CommandError(self.owner, 'no fabric specified')
 
-		get_partition_members(fabric, lst_host_iface)
-		
-		if partition not in partition_data:
-			# skip adding members for non-existant partitions
-			continue
+		# for each partition in the database, add if it doesn't exist, 
+		live_partitions = s.partitions
+		for part in db_partitions:
+			if part not in live_partitions:
+				# create the partitions that don't exist yet
+				kwargs = {k:v for k,v in db_partitions[part].items() if k in ['ipoib', 'defmember']}
+				s.add_partition(part,
+								int(db_partitions[part]['pkey'], 16),
+								**kwargs
+								)
 
-		if mac in partition_data[partition]['guids']:
-			# don't add the same guid twice
+				# leave an empty dictionary so that later set()-builders don't break
+				live_partitions[part] = {'guids': {}}
 
-		s.add_partition_member(partition, mac, membership=membership)
+			# get all of the members on the switch for this partition who aren't in the DB
+			db_part_members   = set(db_partitions[part]['guids'])
+			live_part_members = set(live_partitions[part]['guids'])
+			old_members       = live_part_members.difference(db_part_members)
 
-		
-		# if the only partition is 'Default', everyone should be a full member
-		if list(s.partitions.keys()) == ['Default']:
-			for mac in macs_for_default:
-				s.add_partition_member('Default', mac[-23:], membership='limited')
+			# remove the old partition members
+			[s.del_partition_member(part, member) for member in old_members]
+
+			# create the new memberships.
+			# note: it's safe to overwrite the old ones this way as well
+			for guid in db_part_members:
+				membership = db_partitions[part]['guids'][guid]
+				s.add_partition_member(part, guid, membership)
