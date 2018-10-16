@@ -36,16 +36,11 @@ class Command(stack.commands.HostArgumentProcessor,
 		self.addOutput(host, '')
 
 	def expandRules(self, lines, parameter, items):
-		expanded_lines = [
+		return [
 			f'{line} {parameter} {item}'
 			for line in lines
 			for item in items
 		]
-
-		if expanded_lines:
-			return expanded_lines
-
-		return lines
 
 	def printRules(self, host, table, rules):
 		if len(rules) == 0 and table != 'filter':
@@ -100,7 +95,7 @@ class Command(stack.commands.HostArgumentProcessor,
 
 			# Order is important here: '--dport' must come immediately after '-p'
 			if service:
-				lines = self.expandRules(lines, '--dport', [ service ])
+				lines = self.expandRules(lines, '--dport', [service])
 
 			if rule['network'] and rule['network'] != 'all':
 				# Skip the rule if there is no interface on this network
